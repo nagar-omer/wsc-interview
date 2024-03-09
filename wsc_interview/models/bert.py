@@ -1,13 +1,13 @@
 from transformers import BertTokenizer, BertForSequenceClassification
-from pathlib import Path
-import os
 from wsc_interview import logger
+from pathlib import Path
 import string
+import os
 import re
 
 
 # set download root for models
-DOWNLOAD_ROOT = Path(__file__).resolve().parent.parent / "artifacts" / "models"
+DOWNLOAD_ROOT = Path(__file__).resolve().parent.parent / "cache" / "models"
 os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
 

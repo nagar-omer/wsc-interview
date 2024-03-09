@@ -1,12 +1,12 @@
+from wsc_interview.models.action_classification_model import LitActionClassifier
+from wsc_interview.models.data_loaders import ActionDataset, collate_fn
+from wsc_interview.models.bert import get_bert_uncased_tokenizer
+from torch.utils.data import DataLoader
 from pathlib import Path
 import lightning as L
 import torch
 import yaml
 import os
-from torch.utils.data import random_split, DataLoader
-from wsc_interview.models.action_classification_model import LitActionClassifier
-from wsc_interview.models.bert import get_bert_uncased_tokenizer
-from wsc_interview.models.data_loaders import ActionDataset, collate_fn
 
 
 def plot_loss(train_loss, val_loss, filename=None):
@@ -47,7 +47,7 @@ def train(config: dict):
                          shuffle=False, collate_fn=collate_fn, persistent_workers=True)
 
     # load model
-    model = LitActionClassifier(**config)
+    model = LitActionClassifier(label_count=action_dataset.all_instances[2].value_counts(), **config)
 
     # train model
     trainer = L.Trainer(max_epochs=max_epochs, accelerator='cpu')
@@ -55,7 +55,7 @@ def train(config: dict):
 
     # save model & threshold
     name = config["model"]["name"]
-    ssave_dir = Path(config["artifacts"]["path"])
+    ssave_dir = Path(config["cache"]["path"])
     os.makedirs(ssave_dir, exist_ok=True)
     torch.save({"model": model.state_dict(), "threshold": model._threshold}, ssave_dir / f"{name}_model.pt")
 
@@ -64,7 +64,7 @@ def train(config: dict):
 
 
 if __name__ == '__main__':
-    yaml_file = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/config_yamls/baseline_config.yaml"
+    yaml_file = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/config_yamls/weighted_loss_config.yaml"
     assert os.path.exists(yaml_file), f"yaml file {yaml_file} does not exist"
     with open(yaml_file, "r") as f:
         config_ = yaml.safe_load(f)

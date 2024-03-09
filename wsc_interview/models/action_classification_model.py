@@ -61,10 +61,14 @@ class ActionClassifier(nn.Module):
 
 
 class LitActionClassifier(L.LightningModule):
-    def __init__(self, **kwargs):
+    def __init__(self, label_count=None, **kwargs):
         super().__init__()
         self._train_loss, self._val_loss = [], []
-        self._criteria = nn.BCELoss()
+        if kwargs.get("model", {}).get("weighted_loss", False) or label_count is None:
+            self._criteria = nn.BCEWithLogitsLoss()
+        else:
+            pos_weight = torch.tensor([label_count[0] / label_count[1]], dtype=torch.float32)
+            self._criteria = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
         # Choose a specific version of CLIP, e.g., "openai/clip-vit-base-patch32"
         self._classifier = ActionClassifier(**kwargs)

@@ -4,7 +4,7 @@ model:
   freeze_bert: True                 # Freeze BERT layers
   aggregate_method: "mean"          # Other options: mean
   mlp_layers: [768, 256, 1]         # Dimensions for MLP layers on top of BERT
-  weighted_loss: False              # Use weighted loss
+  weighted_loss: True               # Use weighted loss
 
 optimizer:
   name: "AdamW"                     # Other options: Adam, Adagrad, etc.

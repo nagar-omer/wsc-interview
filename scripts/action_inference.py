@@ -11,7 +11,7 @@ import os
 def pipeline(config):
     data_path = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/action_enrichment_ds_home_exercise.csv"
     params_file = config["data"]["params_path"]
-    model_path = Path(config["artifacts"]["path"]) / f"{config['model']['name']}_model.pt"
+    model_path = Path(config["cache"]["path"]) / f"{config['model']['name']}_model.pt"
 
     # load model
     m_dict = torch.load(model_path)
@@ -54,7 +54,7 @@ def pipeline(config):
     # drop instance_id and save
     data = data.drop(columns=['instance_id'])
 
-    artifacts_dir = config["artifacts"]["path"]
+    artifacts_dir = config["cache"]["path"]
     data.to_csv(Path(artifacts_dir) / 'inference.csv', index=False)
 
 
