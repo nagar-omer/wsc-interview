@@ -4,7 +4,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
-from wsc_interview.bert import preprocess_text
+from wsc_interview.models.bert import preprocess_text
 from collections import Counter
 
 nltk.download('stopwords')

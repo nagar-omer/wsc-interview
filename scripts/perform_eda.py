@@ -1,6 +1,6 @@
 import argparse
-from wsc_interview.data_loaders import ActionDataset
-from wsc_interview.bert import get_bert_uncased_model
+from wsc_interview.models.data_loaders import ActionDataset
+from wsc_interview.models.bert import get_bert_uncased_tokenizer
 from wsc_interview.utils.eda_utils import label_distribution, bar_plot, text_length_distribution, \
     plot_text_length_distribution, word_frequency_distribution, plot_histogram, word_label_corr, \
     get_params_distribution, get_param_label_distribution, plot_param_label_freq
@@ -9,8 +9,7 @@ import numpy as np
 
 def run(data_path, params_file):
     # load the dataset (tokenizer is used for text preprocessing)
-    tokenizer, model = get_bert_uncased_model()
-    ds = ActionDataset(data_path, params_file, tokenizer=tokenizer)
+    ds = ActionDataset(data_path, params_file, tokenizer=get_bert_uncased_tokenizer())
 
     print("Number of instances: ", len(ds))
     print("Number of dropped instances: ", len(ds.dropped_instances))
