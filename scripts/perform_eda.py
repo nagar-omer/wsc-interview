@@ -1,10 +1,10 @@
-import argparse
-from wsc_interview.models.data_loaders import ActionDataset
-from wsc_interview.models.bert import get_bert_uncased_tokenizer
 from wsc_interview.utils.eda_utils import label_distribution, bar_plot, text_length_distribution, \
     plot_text_length_distribution, word_frequency_distribution, plot_histogram, word_label_corr, \
     get_params_distribution, get_param_label_distribution, plot_param_label_freq
+from wsc_interview.models.bert import get_bert_uncased_tokenizer
+from wsc_interview.models.data_loaders import ActionDataset
 import numpy as np
+import argparse
 
 
 def run(data_path, params_file):

@@ -1,8 +1,11 @@
 from wsc_interview.models.action_classification_model import LitActionClassifier
-from wsc_interview.models.data_loaders import process_data_and_params
+from wsc_interview.models.data_loaders import ActionDataset, Collate_fn
 from wsc_interview.models.bert import get_bert_uncased_tokenizer
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import torch
 import yaml
 import os
@@ -11,7 +14,9 @@ import os
 def pipeline(config):
     data_path = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/action_enrichment_ds_home_exercise.csv"
     params_file = config["data"]["params_path"]
-    model_path = Path(config["cache"]["path"]) / f"{config['model']['name']}_model.pt"
+    model_path = Path(config["artifacts"]["path"]) / f"{config['model']['name']}_model.pt"
+    use_mask = config["data"]["use_mask"]
+    batch_size = config["inference"]["batch_size"]
 
     # load model
     m_dict = torch.load(model_path)
@@ -21,50 +26,25 @@ def pipeline(config):
     model._threshold = m_dict["threshold"]
 
     # load data
-    df_params = pd.read_csv(params_file)[['parameter']].dropna()
-    df_data = pd.read_csv(data_path)[['EventName', 'Text']]
-    df_data['instance_id'] = list(range(len(df_data)))
-
-    # preprocess text and params
     tokenizer = get_bert_uncased_tokenizer()
-    data, params = process_data_and_params(data=df_data, params=df_params, tokenizer=tokenizer, drop=False, n_jobs=1)
-
-    # prepare data for prediction
-    data_wo_params = data[data['n_params'] == 0]
-    data_with_params = data[data['n_params'] >= 1]
-    data_with_params = data_with_params.explode(['Params', 'Params_tokens'])
+    ds = ActionDataset(data_path, params_file, tokenizer=tokenizer, use_mask=use_mask, mode='inference')
+    dl = DataLoader(ds, num_workers=8, batch_size=batch_size, shuffle=False,
+                    collate_fn=Collate_fn(mode='inference'), persistent_workers=True)
 
     # predict
-    data_wo_params['Action'] = 0
-    data_with_params['Action'] = data_with_params.apply(lambda instance: predict(model, tokenizer, instance), axis=1)
+    all_text = ds.dropped_instances['Text'].tolist()
+    all_params = [None] * len(all_text)
+    all_labels = [0] * len(all_text)
+    for token_ids, phrase_token_idx, text, phrase in tqdm(dl, total=len(dl)):
+        out = model.classifier(token_ids, phrase_token_idx).detach().cpu()
+        all_text.extend(text)
+        all_params.extend(phrase)
+        all_labels.extend((out > model.threshold).squeeze(dim=1).numpy().astype(np.uint8).tolist())
 
-    # group data
-    data = pd.concat([data_wo_params, data_with_params])
-    data = data.groupby('instance_id').agg({
-        'EventName': 'first',
-        'Text': 'first',
-        'Tokens': 'first',
-        'Params': list,
-        'Params_tokens': list,
-        'n_params': 'first',
-        'Action': list
-    }).reset_index()
-    data = data.sort_values(by='instance_id')
-
-    # drop instance_id and save
-    data = data.drop(columns=['instance_id'])
-
-    artifacts_dir = config["cache"]["path"]
-    data.to_csv(Path(artifacts_dir) / 'inference.csv', index=False)
-
-
-def predict(model, tokenizer, instance):
-    text_tokens = instance['Tokens']
-    parma_tokens = instance['Params_tokens']
-
-    token_ids = tokenizer.convert_tokens_to_ids(text_tokens)
-    text_token_tensor = tokenizer.prepare_for_model(token_ids, return_tensors='pt')['input_ids']
-    return int(model.classifier(text_token_tensor.unsqueeze(dim=0), [parma_tokens]).item() > model.threshold)
+    # save predictions
+    res_df = pd.DataFrame({"Text": all_text, "Params": all_params, "Label": all_labels})
+    res_path = Path(config["artifacts"]["path"]) / f"inference.csv"
+    res_df.to_csv(res_path, index=False)
 
 
 if __name__ == '__main__':

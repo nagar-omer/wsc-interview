@@ -1,10 +1,10 @@
-import numpy as np
-import torch
 from sklearn.metrics import roc_auc_score, recall_score, precision_score, roc_curve
-from wsc_interview import logger
 from wsc_interview.models.bert import get_bert_uncased_model
+from wsc_interview import logger
 from torch import nn, optim
 import lightning as L
+import numpy as np
+import torch
 
 
 OPTIMIZERS = {
@@ -134,7 +134,7 @@ class LitActionClassifier(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # Training step
-        transcription, action_idx, y_true = batch
+        transcription, action_idx, phrase, y_true = batch
 
         y_hat = self._classifier(transcription, action_idx)
         loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
@@ -147,7 +147,7 @@ class LitActionClassifier(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         # Validation step
-        transcription, action_idx, y_true = batch
+        transcription, action_idx, phrase, y_true = batch
 
         y_hat = self._classifier(transcription, action_idx)
         loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
