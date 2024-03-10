@@ -63,12 +63,23 @@ class ActionClassifier(nn.Module):
 class LitActionClassifier(L.LightningModule):
     def __init__(self, label_count=None, **kwargs):
         super().__init__()
+        # store loss for plotting
         self._train_loss, self._val_loss = [], []
-        if kwargs.get("model", {}).get("weighted_loss", False) or label_count is None:
-            self._criteria = nn.BCEWithLogitsLoss()
+
+        # set loss function and class weights
+        use_class_weights = kwargs.get("model", {}).get("weighted_loss", False)
+        if not use_class_weights or label_count is None:
+            self._class_weight = None
+            self._criteria = nn.BCELoss()
         else:
-            pos_weight = torch.tensor([label_count[0] / label_count[1]], dtype=torch.float32)
-            self._criteria = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            # [ neg weight, pos weight]
+            pos_count = label_count[1]
+            neg_count = label_count[0]
+            self._class_weight = [
+                (pos_count + neg_count) / (2.0 * neg_count),
+                (pos_count + neg_count) / (2.0 * pos_count)
+            ]
+            self._criteria = nn.BCELoss(reduction='none')
 
         # Choose a specific version of CLIP, e.g., "openai/clip-vit-base-patch32"
         self._classifier = ActionClassifier(**kwargs)
@@ -78,9 +89,11 @@ class LitActionClassifier(L.LightningModule):
         self._learning_rate = float(kwargs.get("optimizer", {}).get("learning_rate", 2e-5))
         self._weight_decay = float(kwargs.get("optimizer", {}).get("weight_decay", 0.01))
 
+        # store predictions and labels for batch metrics calculation
         self._train_step_predictions, self._train_step_labels = [], []
         self._val_step_predictions, self._val_step_labels = [], []
 
+        # set initial threshold
         self._threshold = 0.5
 
     @property
@@ -92,6 +105,7 @@ class LitActionClassifier(L.LightningModule):
         return self._classifier
 
     def configure_optimizers(self):
+        AdamW = optim.AdamW(self.parameters(), lr=self._learning_rate, weight_decay=self._weight_decay)
         kwargs = {'lr': self._learning_rate, 'weight_decay': self._weight_decay}
         optimizer = self._optimizer(self.parameters(), **kwargs)
         return optimizer
@@ -137,7 +151,12 @@ class LitActionClassifier(L.LightningModule):
         transcription, action_idx, phrase, y_true = batch
 
         y_hat = self._classifier(transcription, action_idx)
-        loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
+        if self._class_weight is None:
+            loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
+        else:
+            batch_weight = torch.ones_like(y_hat, dtype=torch.float) * self._class_weight[1]
+            batch_weight[y_true == 0] = self._class_weight[0]
+            loss = torch.mean(self._criteria(y_hat, y_true.unsqueeze(1).float()) * batch_weight)
 
         self.log('train_loss', loss, on_epoch=True)
         self._train_step_predictions.append(y_hat)
@@ -150,7 +169,12 @@ class LitActionClassifier(L.LightningModule):
         transcription, action_idx, phrase, y_true = batch
 
         y_hat = self._classifier(transcription, action_idx)
-        loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
+        if self._class_weight is None:
+            loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
+        else:
+            batch_weight = torch.ones_like(y_hat, dtype=torch.float) * self._class_weight[1]
+            batch_weight[y_true == 0] = self._class_weight[0]
+            loss = torch.mean(self._criteria(y_hat, y_true.unsqueeze(1).float()) * batch_weight)
 
         self.log('val_loss', loss, on_epoch=True)  # Log loss for the entire validation set
         self._val_step_predictions.append(y_hat)

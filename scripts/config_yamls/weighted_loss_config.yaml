@@ -9,7 +9,7 @@ model:
 optimizer:
   name: "AdamW"                     # Other options: Adam, Adagrad, etc.
   learning_rate: 2e-5
-  weight_decay: 0.01
+  weight_decay: 2e-1
 
 training:
   batch_size: 32

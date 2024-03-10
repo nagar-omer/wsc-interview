@@ -29,7 +29,7 @@ def action_phrase_accuracy(model, ds):
     """
     Calculate accuracy for action phrase
     """
-    dl = DataLoader(ds, num_workers=1, batch_size=1, shuffle=False, collate_fn=Collate_fn, persistent_workers=True)
+    dl = DataLoader(ds, num_workers=1, batch_size=1, shuffle=False, collate_fn=Collate_fn(), persistent_workers=True)
     # get predictions
     phrases, predictions, labels = [], [], []
     for batch in dl:
@@ -69,9 +69,9 @@ def train(config: dict):
     train_ds, test_ds = action_dataset.split(train_size=train_size)
 
     dl_train = DataLoader(train_ds, num_workers=num_workers, batch_size=bach_size,
-                          shuffle=True, collate_fn=Collate_fn, persistent_workers=True)
+                          shuffle=True, collate_fn=Collate_fn(), persistent_workers=True)
     dl_eval = DataLoader(test_ds, num_workers=num_workers, batch_size=num_workers,
-                         shuffle=False, collate_fn=Collate_fn, persistent_workers=True)
+                         shuffle=False, collate_fn=Collate_fn(), persistent_workers=True)
 
     # load model
     model = LitActionClassifier(label_count=action_dataset.all_instances[2].value_counts(), **config)

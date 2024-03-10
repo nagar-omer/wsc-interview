@@ -4,13 +4,12 @@ model:
   freeze_bert: True                 # Freeze BERT layers
   aggregate_method: "mean"          # Other options: mean
   mlp_layers: [768, 256, 1]         # Dimensions for MLP layers on top of BERT
-  weighted_loss: False              # Use weighted loss
+  weighted_loss: True               # Use weighted loss
 
 optimizer:
   name: "AdamW"                     # Other options: Adam, Adagrad, etc.
   learning_rate: 2e-5
   weight_decay: 2e-1
-
 
 training:
   batch_size: 32
@@ -23,9 +22,9 @@ inference:
 data:
   data_path: "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/action_enrichment_ds_home_exercise.csv"
   params_path: "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/params_list.csv"
-  use_mask: False
+  use_mask: True
   train_val_split: 0.8               # Train-validation split ratio
 
 artifacts:
-  path: "/Users/omernagar/Documents/Projects/wsc-interview/scripts/artifacts"  # Path to save model cache
+  path: "/Users/omernagar/Documents/Projects/wsc-interview/scripts/cache"  # Path to save model cache
 
