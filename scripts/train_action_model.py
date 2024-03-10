@@ -1,7 +1,8 @@
 from wsc_interview.models.action_classification_model import LitActionClassifier
-from wsc_interview.models.data_loaders import ActionDataset, Collate_fn
+from wsc_interview.models.data_loaders import ActionDataset, CollateFn
 from wsc_interview.models.bert import get_bert_uncased_tokenizer
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
 from pathlib import Path
 import lightning as L
 import numpy as np
@@ -11,7 +12,13 @@ import os
 
 
 def plot_loss(train_loss, val_loss, filename=None):
-    import matplotlib.pyplot as plt
+    """
+    Plot loss over epochs
+    :param train_loss: array of train loss - with shape (n_epochs,)
+    :param val_loss: array of val loss - with shape (n_epochs,)
+    :param filename: filename to save the plot, if None - show plot
+    :return:
+    """
     plt.plot(train_loss, label="train")
     plt.plot(val_loss, label="val")
     plt.xlabel("Epoch")
@@ -29,7 +36,7 @@ def action_phrase_accuracy(model, ds):
     """
     Calculate accuracy for action phrase
     """
-    dl = DataLoader(ds, num_workers=1, batch_size=1, shuffle=False, collate_fn=Collate_fn(), persistent_workers=True)
+    dl = DataLoader(ds, num_workers=1, batch_size=1, shuffle=False, collate_fn=CollateFn(), persistent_workers=True)
     # get predictions
     phrases, predictions, labels = [], [], []
     for batch in dl:
@@ -69,9 +76,9 @@ def train(config: dict):
     train_ds, test_ds = action_dataset.split(train_size=train_size)
 
     dl_train = DataLoader(train_ds, num_workers=num_workers, batch_size=bach_size,
-                          shuffle=True, collate_fn=Collate_fn(), persistent_workers=True)
+                          shuffle=True, collate_fn=CollateFn(), persistent_workers=True)
     dl_eval = DataLoader(test_ds, num_workers=num_workers, batch_size=num_workers,
-                         shuffle=False, collate_fn=Collate_fn(), persistent_workers=True)
+                         shuffle=False, collate_fn=CollateFn(), persistent_workers=True)
 
     # load model
     model = LitActionClassifier(label_count=action_dataset.all_instances[2].value_counts(), **config)

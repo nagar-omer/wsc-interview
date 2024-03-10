@@ -14,8 +14,17 @@ import os
 
 def find_params(text_tokens: list, prams_tokens: list, params: list, n_jobs=-1) -> dict:
     """
-    Check if a parameter is in a given text.
+    This function finds the parameters in the text tokens (assuming same tokenizer was used for both text and params)
+    it returns the indices of the parameters in the text tokens
+
+    :param text_tokens: list of text tokens
+    :param prams_tokens: list of phrase tokens
+    :param params: list of parameters in their original form
+    :param n_jobs: number of parallel jobs
+
+    :return: dictionary with the parameters and their tokens {Params_tokens: list, Params: list}
     """
+
     # parallelize the process
     param_tokens = Parallel(n_jobs=n_jobs)(delayed(find_tokens)(text_tokens, phrase_tokens) for phrase_tokens in prams_tokens)
     tokens = [tokens for tokens in param_tokens if tokens]
@@ -24,6 +33,24 @@ def find_params(text_tokens: list, prams_tokens: list, params: list, n_jobs=-1) 
 
 
 def process_data_and_params(data: pd.DataFrame, params: pd.DataFrame, tokenizer, n_jobs=-1, mode='train') -> Tuple:
+    """
+    This function preprocesses the data and the parameters and extracts the parameters from the text
+    This operation is done in before training and inference
+
+    - preprocess the text and action phrases
+    - extract the parameters from the text
+    in train mode it drops instances with zero or more than one parameter
+    in test mode it splits the data to instances with and without parameters, explodes the instances with more than one
+    parameter, and splits the data to instances with and without parameters
+
+    :param data: pandas DataFrame with the data
+    :param params: pandas DataFrame with the parameters
+    :param tokenizer: tokenizer to use
+    :param n_jobs: number of parallel jobs
+    :param mode: train or inference
+
+    :return: Tuple of data, params, dropped instances
+    """
 
     # preprocess text data (params and data)
     params['Tokens'] = params['parameter'].apply(lambda x: preprocess_text(x, tokenizer=tokenizer))
@@ -54,19 +81,50 @@ def process_data_and_params(data: pd.DataFrame, params: pd.DataFrame, tokenizer,
 
 def mask_action_phrase(tokens: list, phrase_token_idx: list) -> list:
     """
-    Mask the tokens with [MASK] in the phrase_token_idx
+    Function to mask the action phrase in the tokens for example:
+    tokens = ['I', 'want', 'to', 'go', 'to', 'the', 'store'], phrase_token_idx = [2, 3]
+    will return ['I', 'want', '[MASK]', 'the', 'store']
+
+    :param tokens: list of tokens
+    :param phrase_token_idx: list of tokens to mask (indices)
+    :return: masked tokens
     """
+
+    # deep copy tokens to avoid changing the original list
     tokens = deepcopy(tokens)
+
+    # change the first token to [MASK]
     tokens[phrase_token_idx[0]] = '[MASK]'
+
+    # remove the rest of the tokens
     for idx in phrase_token_idx[1:][::-1]:
         del tokens[idx]
     return tokens
 
 
 class ActionDataset(Dataset):
+    """
+    Dataset class for the action enrichment task
+    """
+
     def __init__(self, data_path: str = None, params_file: str = None, tokenizer=None, use_mask: bool = True,
                  mode='train'):
-        self._mode = mode
+        """
+        Initialize the dataset
+        This dataset perform different operations based on the mode: train or inference
+        for train it drops instances with zero or more than one parameter
+        for inference it splits the data to instances with and without parameters, explodes the instances with more than
+        one parameter, and splits the data to instances with and without parameters (marked as dropped instances)
+
+        :param data_path: path to the data file (transcriptions to label)
+        :param params_file: path to the parameters file (action phrases)
+        :param tokenizer: tokenizer to use (default is BERT uncased)
+        :param use_mask: if True, mask the action phrase in the tokens and replace them with [MASK]
+        :param mode: train | inference
+
+        """
+
+        # verify that the files exist
         if not os.path.exists(data_path):
             logger.error(f"Data file {data_path} does not exist")
             return
@@ -75,14 +133,19 @@ class ActionDataset(Dataset):
             logger.error(f"Params file {params_file} does not exist")
             return
 
+        # set mode and tokenizer
+        self._mode = mode
         self._tokenizer = tokenizer if tokenizer else get_bert_uncased_tokenizer()
+        self._use_mask = use_mask
+
+        # load data and params
         self._data = pd.read_csv(data_path)
-        # assuming file is coma separated
         self._params = pd.read_csv(params_file)[['parameter']].dropna()
+
+        # preprocess data and params
         self._data, self._params, self._dropped = process_data_and_params(self._data, self._params, self._tokenizer,
                                                                           mode=mode)
-
-        self._use_mask = use_mask
+        # mask action phrase if use_mask is True
         if use_mask:
             self._data['Tokens'] = self._data.apply(lambda x: mask_action_phrase(x['Tokens'], x['Params_tokens']), axis=1)
 
@@ -120,15 +183,23 @@ class ActionDataset(Dataset):
         else:
             phrase_token_idx = torch.Tensor(self._data.iloc[idx]['Params_tokens']).long()
 
+        # return data based on mode
         if self._mode == 'train':
+            # for train return phrase labels
             label = int(self._data.iloc[idx]['Label'])
             return token_ids, phrase_token_idx, phrase, label
         else:
+            # for inference return text and phrase
             return token_ids, phrase_token_idx, text, phrase
 
-    def split(self, train_size: float = 0.8):
+    def split(self, train_size: float = 0.8) -> Tuple:
         """
-        Split data to train and test
+        Split data to train and test according to the distribution of actions and labels
+        - calculate the frequency of each action and label
+        - split the data to train and test based on the frequency
+
+        :param train_size: size of the train set
+        :return: train and test datasets
         """
 
         # get distribution of actions and labels
@@ -156,12 +227,21 @@ class ActionDataset(Dataset):
         return train_data, test_data
 
 
-class Collate_fn:
+class CollateFn:
+    """
+    Collate function for the action enrichment task
+    """
     def __init__(self, mode='train'):
+        # set mode
         self._mode = mode
 
     def __call__(self, batch):
-        # extract tokens, phrase_token_idx and labels
+        """
+        Collate function for the action enrichment task
+        :param batch: batch of data
+        :return: Tuple of tokens, phrase_token_idx, phrase, labels
+        """
+        # extract batch based on mode (ActionDataset acts differently based on mode)
         if self._mode == 'train':
             tokens, phrase_token_idx, phrase, labels = zip(*batch)
             labels = torch.Tensor(labels).long()
@@ -176,15 +256,6 @@ class Collate_fn:
         # keep phrase as list
         phrase_token_idx = phrase_token_idx
 
+        # return data based on mode
         return (tokens, phrase_token_idx, phrase, labels) if self._mode == 'train' else \
             (tokens, phrase_token_idx, text, phrase)
-
-
-if __name__ == '__main__':
-    data_path = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/action_enrichment_ds_home_exercise.csv"
-    params_file = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/params_list.csv"
-
-    tokenizer = get_bert_uncased_tokenizer()
-
-    action_dataset = ActionDataset(data_path, params_file, tokenizer=tokenizer)
-    train_ds, test_ds = action_dataset.split()

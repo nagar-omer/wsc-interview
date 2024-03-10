@@ -1,5 +1,5 @@
 from wsc_interview.models.action_classification_model import LitActionClassifier
-from wsc_interview.models.data_loaders import ActionDataset, Collate_fn
+from wsc_interview.models.data_loaders import ActionDataset, CollateFn
 from wsc_interview.models.bert import get_bert_uncased_tokenizer
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -29,7 +29,7 @@ def pipeline(config):
     tokenizer = get_bert_uncased_tokenizer()
     ds = ActionDataset(data_path, params_file, tokenizer=tokenizer, use_mask=use_mask, mode='inference')
     dl = DataLoader(ds, num_workers=8, batch_size=batch_size, shuffle=False,
-                    collate_fn=Collate_fn(mode='inference'), persistent_workers=True)
+                    collate_fn=CollateFn(mode='inference'), persistent_workers=True)
 
     # predict
     all_text = ds.dropped_instances['Text'].tolist()

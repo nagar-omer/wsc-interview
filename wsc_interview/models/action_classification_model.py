@@ -6,7 +6,7 @@ import lightning as L
 import numpy as np
 import torch
 
-
+# optimizer mapping
 OPTIMIZERS = {
     "AdamW": optim.AdamW,
     "Adam": optim.Adam,
@@ -16,7 +16,16 @@ OPTIMIZERS = {
 
 
 class ActionClassifier(nn.Module):
+    """
+    Action Classifier model
+    1. BERT backbone
+    2. MLP head (with Relu activation and sigmoid)
+    """
     def __init__(self, **kwargs):
+        """
+        Initialize the action classifier model
+        :param kwargs: a dictionary config dict loaded via yaml file
+        """
         # unpack kwargs
         aggregate = kwargs.get("model", {}).get("aggregate_method", "mean")
         freeze_bert = kwargs.get("model", {}).get("freeze_bert", True)
@@ -43,6 +52,12 @@ class ActionClassifier(nn.Module):
         self._mlp = nn.Sequential(*mlp)
 
     def forward(self, tokens, phrase_token_idx):
+        """
+        Forward pass
+        :param tokens: tensor of token ids for transcription
+        :param phrase_token_idx: indices of action phrases
+        :return: scores for each action
+        """
         # get bert output
         output = self._bert_backbone(tokens)
         # get token embeddings
@@ -61,7 +76,17 @@ class ActionClassifier(nn.Module):
 
 
 class LitActionClassifier(L.LightningModule):
+    """
+    PyTorch Lightning module for action classification
+    This module wraps the action classifier model and provides training and validation steps
+    """
     def __init__(self, label_count=None, **kwargs):
+        """
+        Initialize the action classifier model
+        :param label_count: count of positive and negative labels
+        :param kwargs: a dictionary config dict loaded via yaml file
+        """
+
         super().__init__()
         # store loss for plotting
         self._train_loss, self._val_loss = [], []
@@ -105,12 +130,22 @@ class LitActionClassifier(L.LightningModule):
         return self._classifier
 
     def configure_optimizers(self):
-        AdamW = optim.AdamW(self.parameters(), lr=self._learning_rate, weight_decay=self._weight_decay)
+        """
+        Configure the optimizer
+        :return: optimizer
+        """
+        # set optimizer arguments and initialize
         kwargs = {'lr': self._learning_rate, 'weight_decay': self._weight_decay}
         optimizer = self._optimizer(self.parameters(), **kwargs)
         return optimizer
 
-    def _auc(self, y_hat, y_true):
+    def _auc(self, y_hat: torch.Tensor, y_true: torch.Tensor):
+        """
+        Calculate the ROC-AUC score
+        :param y_hat: predicted scores
+        :param y_true: ground truth labels
+        :return: score
+        """
         # if all labels are the same, return 0.5
         if len(set(y_true.tolist())) == 1:
             return 0.5
@@ -120,17 +155,27 @@ class LitActionClassifier(L.LightningModule):
         y_true = y_true.detach().cpu().numpy()
         return roc_auc_score(y_true, y_hat)
 
-    def _set_threshold(self, y_hat, y_true):
+    def _set_threshold(self, y_hat: torch.Tensor, y_true: torch.Tensor):
+        """
+        Set the optimal threshold according to the ROC curve
+        :param y_hat: predicted scores
+        :param y_true: ground truth labels
+        """
         # Compute ROC curve
         fpr, tpr, thresholds = roc_curve(y_true, y_hat)
 
-        # Find the optimal threshold
+        # calculate optimal threshold - minimize distance to (0,1)
         optimal_idx = np.argmin(np.sqrt(np.square(1 - tpr) + np.square(fpr)))
         optimal_threshold = thresholds[optimal_idx]
         self.log('optimal_threshold', optimal_threshold, on_epoch=True)
         self._threshold = optimal_threshold
 
-    def _recall(self, y_hat, y_true):
+    def _recall(self, y_hat: torch.Tensor, y_true: torch.Tensor):
+        """
+        Calculate recall
+        :param y_hat: predicted scores
+        :param y_true: ground truth labels
+        """
         # calculate recall
         y_hat = y_hat.detach().cpu().numpy()
         y_true = y_true.detach().cpu().numpy()
@@ -138,7 +183,13 @@ class LitActionClassifier(L.LightningModule):
         y_hat = (y_hat > self._threshold).astype(int)
         return recall_score(y_true, y_hat)
 
-    def _precision(self, y_hat, y_true):
+    def _precision(self, y_hat: torch.Tensor, y_true: torch.Tensor):
+        """
+        Calculate precision
+        :param y_hat: predicted scores
+        :param y_true: ground truth labels
+        :return:
+        """
         # calculate precision
         y_hat = y_hat.detach().cpu().numpy()
         y_true = y_true.detach().cpu().numpy()
@@ -147,42 +198,69 @@ class LitActionClassifier(L.LightningModule):
         return precision_score(y_true, y_hat)
 
     def training_step(self, batch, batch_idx):
-        # Training step
-        transcription, action_idx, phrase, y_true = batch
+        """
+        Training step
+        :param batch: batch of data
+        :param batch_idx: batch index
+        :return: loss
+        """
 
+        # unpack batch and apply model
+        transcription, action_idx, phrase, y_true = batch
         y_hat = self._classifier(transcription, action_idx)
+
+        # calculate loss (with class weights if applicable)
         if self._class_weight is None:
             loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
         else:
+            # apply class weights - each sample is weighted according to its class
             batch_weight = torch.ones_like(y_hat, dtype=torch.float) * self._class_weight[1]
             batch_weight[y_true == 0] = self._class_weight[0]
             loss = torch.mean(self._criteria(y_hat, y_true.unsqueeze(1).float()) * batch_weight)
 
+        # log loss
         self.log('train_loss', loss, on_epoch=True)
+
+        # store predictions and labels for batch metrics calculation
         self._train_step_predictions.append(y_hat)
         self._train_step_labels.append(y_true)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        # Validation step
+        """
+        Validation step
+        :param batch: batch of data
+        :param batch_idx: batch index
+        :return: loss
+        """
+        # unpack batch and apply model
         transcription, action_idx, phrase, y_true = batch
-
         y_hat = self._classifier(transcription, action_idx)
+
+        # calculate loss (with class weights if applicable)
         if self._class_weight is None:
             loss = self._criteria(y_hat, y_true.unsqueeze(1).float())
         else:
+            # apply class weights - each sample is weighted according to its class
             batch_weight = torch.ones_like(y_hat, dtype=torch.float) * self._class_weight[1]
             batch_weight[y_true == 0] = self._class_weight[0]
             loss = torch.mean(self._criteria(y_hat, y_true.unsqueeze(1).float()) * batch_weight)
 
+        # log loss
         self.log('val_loss', loss, on_epoch=True)  # Log loss for the entire validation set
+
+        # store predictions and labels for batch metrics calculation
         self._val_step_predictions.append(y_hat)
         self._val_step_labels.append(y_true)
 
         return loss
 
     def on_train_epoch_end(self):
+        """
+        Calculate and log training metrics
+        """
+
         # unpack predictions and labels
         pred, labels = torch.cat(self._train_step_predictions), torch.cat(self._train_step_labels)
 
@@ -193,12 +271,17 @@ class LitActionClassifier(L.LightningModule):
         precision = self._precision(pred, labels)
         self._train_step_predictions, self._train_step_labels = [], []
 
+        # log metrics
         print(f'\n\nEpoch [{self.current_epoch + 1}/{self.trainer.max_epochs}] - '
               f'Training Loss: {train_loss:.4f}', f'AUC: {auc:.4f}', f'Recall: {recall:.4f}',
               f'Precision: {precision:.4f}')
         self._train_loss.append(train_loss)
 
     def on_validation_epoch_end(self):
+        """
+        Calculate and log validation metrics
+        """
+
         # unpack predictions and labels
         pred, labels = torch.cat(self._val_step_predictions), torch.cat(self._val_step_labels)
 
@@ -212,6 +295,7 @@ class LitActionClassifier(L.LightningModule):
         precision = self._precision(pred, labels)
         self._val_step_predictions, self._val_step_labels = [], []
 
+        # log metrics
         print(f'\n\nEpoch [{self.current_epoch + 1}/{self.trainer.max_epochs}] - '
               f'Validation Loss: {val_loss:.4f}, AUC: {auc:.4f}', f'Recall: {recall:.4f}',
                 f'Precision: {precision:.4f}')
