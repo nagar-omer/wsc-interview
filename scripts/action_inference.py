@@ -11,8 +11,7 @@ import yaml
 import os
 
 
-def pipeline(config):
-    data_path = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/action_enrichment_ds_home_exercise.csv"
+def pipeline(config, data_path):
     params_file = config["data"]["params_path"]
     model_path = Path(config["artifacts"]["path"]) / f"{config['model']['name']}_model.pt"
     use_mask = config["data"]["use_mask"]
@@ -48,8 +47,9 @@ def pipeline(config):
 
 
 if __name__ == '__main__':
+    data_path = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/data/action_enrichment_ds_home_exercise.csv"
     yaml_file = "/Users/omernagar/Documents/Projects/wsc-interview/scripts/config_yamls/baseline_config.yaml"
     assert os.path.exists(yaml_file), f"yaml file {yaml_file} does not exist"
     with open(yaml_file, "r") as f:
         config_ = yaml.safe_load(f)
-    pipeline(config_)
+    pipeline(config_, data_path=data_path)
